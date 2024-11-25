@@ -5,25 +5,37 @@ import base64
 
 st.title("DraftKings NFL Lineup Optimizer")
 
-# Display required columns at the top
+# Create a help icon with tooltip for required columns
 st.markdown("""
-### Required CSV Columns:
-- **Name**: Player name
-- **Team**: Team abbreviation
-- **Position**: Player position (QB, RB, WR, etc.)
-- **Salary**: FLEX salary
-- **Projection**: FLEX projected points
-- **Total Own**: FLEX ownership percentage
-- **CPT Salary**: Captain salary
-- **CPT Projection**: Captain projected points
-- **CPT Own**: Captain ownership percentage
-- **Ceiling**: Player ceiling
-- **Value**: Player value
-""")
+<style>
+.tooltip {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+}
+</style>
+""", unsafe_allow_html=True)
+
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    st.markdown("""
+    ℹ️ <span class="tooltip" title="Required CSV Columns:
+    • Name: Player name
+    • Team: Team abbreviation
+    • Position: Player position
+    • Salary: FLEX salary
+    • Projection: FLEX projected points
+    • Total Own: FLEX ownership %
+    • CPT Salary: Captain salary
+    • CPT Projection: Captain projected points
+    • CPT Own: Captain ownership %
+    • Ceiling: Player ceiling
+    • Value: Player value">Hover here to see required columns</span>
+    """, unsafe_allow_html=True)
 
 st.markdown("---")  # Add a divider
 
-def optimize_lineup(df, previous_lineups=None, optimize_for='Projection'):
+def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lock=None):
     if previous_lineups is None:
         previous_lineups = []
     
@@ -33,6 +45,9 @@ def optimize_lineup(df, previous_lineups=None, optimize_for='Projection'):
     for idx, row in df.iterrows():
         player_vars[f"{row['Name']}_FLEX"] = pulp.LpVariable(f"{row['Name']}_FLEX", 0, 1, pulp.LpBinary)
         player_vars[f"{row['Name']}_CPT"] = pulp.LpVariable(f"{row['Name']}_CPT", 0, 1, pulp.LpBinary)
+    
+    if cpt_lock and cpt_lock != 'None':
+        prob += player_vars[f"{cpt_lock}_CPT"] == 1
     
     if optimize_for == 'Projection':
         prob += pulp.lpSum([
@@ -134,6 +149,12 @@ if uploaded_file is not None:
         st.write("Data Preview:")
         st.dataframe(df)
         
+        # Add CPT lock dropdown
+        cpt_lock = st.selectbox(
+            'Lock in Captain (optional):',
+            ['None'] + df['Name'].tolist()
+        )
+
         if st.button("Generate Lineups"):
             # Generate projection-optimized lineups
             st.header("Top Lineups by Projection")
@@ -141,7 +162,7 @@ if uploaded_file is not None:
             
             for i in range(2):
                 with st.spinner(f'Generating projection-optimized lineup {i+1}...'):
-                    result = optimize_lineup(df, projection_lineups, 'Projection')
+                    result = optimize_lineup(df, projection_lineups, 'Projection', cpt_lock)
                     
                     if result[0] is None:
                         st.error(f"Could not find projection lineup #{i+1}")
@@ -151,6 +172,8 @@ if uploaded_file is not None:
                     projection_lineups.append(results_df.to_dict('records'))
                     
                     st.subheader(f"Projection Lineup #{i+1}")
+                    if cpt_lock != 'None':
+                        st.write(f"Captain locked: {cpt_lock}")
                     
                     total_own = results_df['Ownership'].sum()
                     
@@ -169,7 +192,7 @@ if uploaded_file is not None:
             
             for i in range(2):
                 with st.spinner(f'Generating ceiling-optimized lineup {i+1}...'):
-                    result = optimize_lineup(df, ceiling_lineups, 'Ceiling')
+                    result = optimize_lineup(df, ceiling_lineups, 'Ceiling', cpt_lock)
                     
                     if result[0] is None:
                         st.error(f"Could not find ceiling lineup #{i+1}")
@@ -179,6 +202,8 @@ if uploaded_file is not None:
                     ceiling_lineups.append(results_df.to_dict('records'))
                     
                     st.subheader(f"Ceiling Lineup #{i+1}")
+                    if cpt_lock != 'None':
+                        st.write(f"Captain locked: {cpt_lock}")
                     
                     total_own = results_df['Ownership'].sum()
                     
