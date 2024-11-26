@@ -3,14 +3,24 @@ import pandas as pd
 import pulp
 import base64
 import io
+import random
 
 st.title("DraftKings Showdown Lineup Optimizer")
 
 # Create template download button
 def create_template_csv():
     template_df = pd.DataFrame(columns=[
-        'Name', 'Team', 'Position', 'Salary', 'Projection', 'Total Own',
-        'CPT Salary', 'CPT Projection', 'CPT Own', 'Ceiling', 'Value'
+        'Name',             # Required
+        'Team',             # Required
+        'Position',         # Optional
+        'Salary',          # Required
+        'Projection',       # Required
+        'Total Own',        # Required
+        'CPT Salary',      # Required
+        'CPT Projection',   # Required
+        'CPT Own',         # Required
+        'Ceiling',         # Required
+        'Value'            # Optional
     ])
     # Add one example row
     template_df.loc[0] = [
@@ -36,14 +46,37 @@ with col2:
         unsafe_allow_html=True
     )
 
-def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lock=None):
+def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lock=None, use_random=False, random_weight=0.5, use_ownership_limit=False, max_ownership=None):
     if previous_lineups is None:
         previous_lineups = []
+    
+    # Create a copy of the dataframe
+    df_random = df.copy()
+    
+    if use_random:
+        for idx, row in df_random.iterrows():
+            # Calculate randomized FLEX projection
+            proj_range = float(row['Ceiling']) - float(row['Projection'])
+            max_random = float(row['Projection']) + (proj_range * random_weight)
+            df_random.at[idx, 'Projection'] = random.uniform(
+                float(row['Projection']), 
+                max_random
+            )
+            
+            # Calculate randomized CPT projection
+            cpt_proj = float(row['CPT Projection'])
+            cpt_ceil = float(row['Ceiling']) * 1.5
+            cpt_range = cpt_ceil - cpt_proj
+            max_random_cpt = cpt_proj + (cpt_range * random_weight)
+            df_random.at[idx, 'CPT Projection'] = random.uniform(
+                cpt_proj,
+                max_random_cpt
+            )
     
     prob = pulp.LpProblem("DFS_Optimizer", pulp.LpMaximize)
     
     player_vars = {}
-    for idx, row in df.iterrows():
+    for idx, row in df_random.iterrows():
         player_vars[f"{row['Name']}_FLEX"] = pulp.LpVariable(f"{row['Name']}_FLEX", 0, 1, pulp.LpBinary)
         player_vars[f"{row['Name']}_CPT"] = pulp.LpVariable(f"{row['Name']}_CPT", 0, 1, pulp.LpBinary)
     
@@ -51,25 +84,25 @@ def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lo
         prob += pulp.lpSum([
             player_vars[f"{row['Name']}_FLEX"] * float(row['Projection']) +
             player_vars[f"{row['Name']}_CPT"] * float(row['CPT Projection'])
-            for idx, row in df.iterrows()
+            for idx, row in df_random.iterrows()
         ])
     else:  # Optimize for Ceiling
         prob += pulp.lpSum([
             player_vars[f"{row['Name']}_FLEX"] * float(row['Ceiling']) +
             player_vars[f"{row['Name']}_CPT"] * float(row['Ceiling']) * 1.5
-            for idx, row in df.iterrows()
+            for idx, row in df_random.iterrows()
         ])
     
     prob += pulp.lpSum([
         player_vars[f"{row['Name']}_FLEX"] * float(row['Salary']) +
         player_vars[f"{row['Name']}_CPT"] * float(row['CPT Salary'])
-        for idx, row in df.iterrows()
+        for idx, row in df_random.iterrows()
     ]) <= 50000
     
-    prob += pulp.lpSum([player_vars[f"{row['Name']}_FLEX"] for idx, row in df.iterrows()]) == 5
-    prob += pulp.lpSum([player_vars[f"{row['Name']}_CPT"] for idx, row in df.iterrows()]) == 1
+    prob += pulp.lpSum([player_vars[f"{row['Name']}_FLEX"] for idx, row in df_random.iterrows()]) == 5
+    prob += pulp.lpSum([player_vars[f"{row['Name']}_CPT"] for idx, row in df_random.iterrows()]) == 1
     
-    for idx, row in df.iterrows():
+    for idx, row in df_random.iterrows():
         prob += player_vars[f"{row['Name']}_FLEX"] + player_vars[f"{row['Name']}_CPT"] <= 1
         
     if cpt_lock and cpt_lock != 'None':
@@ -82,6 +115,14 @@ def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lo
             for player in prev_lineup
         ]) <= len(prev_lineup) - 1
     
+    # Add ownership constraint if enabled
+    if use_ownership_limit and max_ownership is not None:
+        prob += pulp.lpSum([
+            player_vars[f"{row['Name']}_FLEX"] * float(row['Total Own']) +
+            player_vars[f"{row['Name']}_CPT"] * float(row['CPT Own'])
+            for idx, row in df_random.iterrows()
+        ]) <= max_ownership
+    
     prob.solve()
     
     if pulp.LpStatus[prob.status] != 'Optimal':
@@ -92,7 +133,7 @@ def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lo
     total_points = 0
     total_ceiling = 0
     
-    for idx, row in df.iterrows():
+    for idx, row in df.iterrows():  # Use original df for display
         flex_var = player_vars[f"{row['Name']}_FLEX"]
         cpt_var = player_vars[f"{row['Name']}_CPT"]
         
@@ -139,10 +180,25 @@ if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file)
         
+        # Check for required columns
+        required_cols = ['Name', 'Team', 'Position', 'Salary', 'Projection', 
+                        'Total Own', 'CPT Salary', 'CPT Projection', 'CPT Own', 'Ceiling']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            st.error(f"Missing required columns: {', '.join(missing_cols)}")
+            st.stop()
+        
+        # Add any missing optional columns with default values
+        if 'Value' not in df.columns:
+            df['Value'] = 0.0
+        
+        # Convert numeric columns, only process columns that exist
         numeric_cols = ['Salary', 'Projection', 'Total Own', 'CPT Salary', 
-                       'CPT Projection', 'CPT Own', 'Ceiling', 'Value']
+                       'CPT Projection', 'CPT Own', 'Ceiling']
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
         st.write("Data Preview:")
         st.dataframe(df)
@@ -153,6 +209,32 @@ if uploaded_file is not None:
             ['None'] + df['Name'].tolist()
         )
         
+        # Add randomization controls
+        with st.expander("Randomization Settings"):
+            use_randomization = st.checkbox("Use Randomization", value=False)
+            if use_randomization:
+                randomization_weight = st.slider(
+                    "Randomization Weight",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.5,
+                    step=0.1,
+                    help="0 = Use Projections Only, 1 = Use Full Range to Ceiling"
+                )
+        
+        # Add this in the settings area, after the randomization controls
+        with st.expander("Ownership Settings"):
+            use_ownership_limit = st.checkbox("Set Maximum Total Ownership", value=False)
+            if use_ownership_limit:
+                max_total_ownership = st.slider(
+                    "Maximum Total Ownership %",
+                    min_value=0,
+                    max_value=600,  # 6 players * 100%
+                    value=300,
+                    step=5,
+                    help="Set the maximum allowed total ownership percentage for the lineup"
+                )
+        
         if st.button("Generate Lineups"):
             # Generate projection-optimized lineups
             st.header("Top Lineups by Projection")
@@ -160,7 +242,16 @@ if uploaded_file is not None:
             
             for i in range(2):
                 with st.spinner(f'Generating projection-optimized lineup {i+1}...'):
-                    result = optimize_lineup(df, projection_lineups, 'Projection', cpt_lock)
+                    result = optimize_lineup(
+                        df, 
+                        projection_lineups, 
+                        'Projection', 
+                        cpt_lock,
+                        use_randomization,
+                        randomization_weight if use_randomization else 0.0,
+                        use_ownership_limit,
+                        max_total_ownership if use_ownership_limit else None
+                    )
                     
                     if result[0] is None:
                         st.error(f"Could not find projection lineup #{i+1}")
@@ -190,7 +281,16 @@ if uploaded_file is not None:
             
             for i in range(2):
                 with st.spinner(f'Generating ceiling-optimized lineup {i+1}...'):
-                    result = optimize_lineup(df, ceiling_lineups, 'Ceiling', cpt_lock)
+                    result = optimize_lineup(
+                        df, 
+                        ceiling_lineups, 
+                        'Ceiling', 
+                        cpt_lock,
+                        use_randomization,
+                        randomization_weight if use_randomization else 0.0,
+                        use_ownership_limit,
+                        max_total_ownership if use_ownership_limit else None
+                    )
                     
                     if result[0] is None:
                         st.error(f"Could not find ceiling lineup #{i+1}")
