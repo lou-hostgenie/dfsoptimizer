@@ -55,21 +55,35 @@ def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lo
     
     if use_random:
         for idx, row in df_random.iterrows():
-            # Calculate randomized FLEX projection
-            proj_range = float(row['Ceiling']) - float(row['Projection'])
-            max_random = float(row['Projection']) + (proj_range * random_weight)
+            # Calculate range for FLEX projection
+            proj_base = float(row['Projection'])
+            proj_ceiling = float(row['Ceiling'])
+            proj_range = proj_ceiling - proj_base
+            proj_floor = proj_base - proj_range  # Mirror the ceiling range below the base
+            
+            # Calculate randomized range based on weight
+            max_random = proj_base + (proj_range * random_weight)
+            min_random = proj_base - (proj_range * random_weight)
+            
+            # Set randomized FLEX projection
             df_random.at[idx, 'Projection'] = random.uniform(
-                float(row['Projection']), 
+                min_random,
                 max_random
             )
             
-            # Calculate randomized CPT projection
-            cpt_proj = float(row['CPT Projection'])
-            cpt_ceil = float(row['Ceiling']) * 1.5
-            cpt_range = cpt_ceil - cpt_proj
-            max_random_cpt = cpt_proj + (cpt_range * random_weight)
+            # Calculate range for CPT projection
+            cpt_proj_base = float(row['CPT Projection'])
+            cpt_ceiling = float(row['Ceiling']) * 1.5
+            cpt_range = cpt_ceiling - cpt_proj_base
+            cpt_floor = cpt_proj_base - cpt_range  # Mirror the ceiling range below the base
+            
+            # Calculate randomized CPT range based on weight
+            max_random_cpt = cpt_proj_base + (cpt_range * random_weight)
+            min_random_cpt = cpt_proj_base - (cpt_range * random_weight)
+            
+            # Set randomized CPT projection
             df_random.at[idx, 'CPT Projection'] = random.uniform(
-                cpt_proj,
+                min_random_cpt,
                 max_random_cpt
             )
     
@@ -178,7 +192,13 @@ def optimize_lineup(df, previous_lineups=None, optimize_for='Projection', cpt_lo
 
 if uploaded_file is not None:
     try:
-        df = pd.read_csv(uploaded_file)
+        # Try different encodings
+        try:
+            df = pd.read_csv(uploaded_file, encoding='utf-8')
+        except UnicodeDecodeError:
+            # If UTF-8 fails, try with a different encoding
+            uploaded_file.seek(0)  # Reset file pointer
+            df = pd.read_csv(uploaded_file, encoding='latin1')
         
         # Check for required columns
         required_cols = ['Name', 'Team', 'Position', 'Salary', 'Projection', 
@@ -219,7 +239,10 @@ if uploaded_file is not None:
                     max_value=1.0,
                     value=0.5,
                     step=0.1,
-                    help="0 = Use Projections Only, 1 = Use Full Range to Ceiling"
+                    help="0% = Use Base Projections Only\n" +
+                         "50% = Random range from (Base - Half Range) to (Base + Half Range)\n" +
+                         "100% = Random range from (Base - Full Range) to (Base + Full Range)\n" +
+                         "Range = Distance from Base to Ceiling"
                 )
         
         # Add this in the settings area, after the randomization controls
@@ -236,15 +259,14 @@ if uploaded_file is not None:
                 )
         
         if st.button("Generate Lineups"):
-            # Generate projection-optimized lineups
-            st.header("Top Lineups by Projection")
-            projection_lineups = []
+            # Generate all 20 lineups first
+            all_lineups = []
             
-            for i in range(2):
-                with st.spinner(f'Generating projection-optimized lineup {i+1}...'):
+            for i in range(20):  # Generate all 20 lineups
+                with st.spinner(f'Generating lineup {i+1}/20...'):
                     result = optimize_lineup(
                         df, 
-                        projection_lineups, 
+                        all_lineups, 
                         'Projection', 
                         cpt_lock,
                         use_randomization,
@@ -254,18 +276,69 @@ if uploaded_file is not None:
                     )
                     
                     if result[0] is None:
-                        st.error(f"Could not find projection lineup #{i+1}")
+                        st.error(f"Could not find lineup #{i+1}")
                         break
                     
                     results_df, total_salary, total_points, total_ceiling = result
-                    projection_lineups.append(results_df.to_dict('records'))
+                    all_lineups.append(results_df.to_dict('records'))
+            
+            # Create CSV with all lineups
+            if all_lineups:
+                # Create a list to store the formatted lineup data
+                formatted_lineups = []
+                
+                for lineup in all_lineups:
+                    lineup_row = {}
+                    
+                    # Sort lineup to ensure CPT is first, then FLEX players
+                    sorted_lineup = sorted(lineup, key=lambda x: x['Position'] != 'CPT')  # CPT first, then FLEX
+                    
+                    # Add CPT
+                    lineup_row['CPT'] = sorted_lineup[0]['Name']
+                    
+                    # Add FLEX players
+                    for i, player in enumerate(sorted_lineup[1:], 1):
+                        lineup_row[f'FLEX {i}'] = player['Name']
+                    
+                    # Add totals
+                    lineup_row['Total Salary'] = sum(p['Salary'] for p in lineup)
+                    lineup_row['Total Projection'] = sum(p['Projected'] for p in lineup)
+                    lineup_row['Total Ceiling'] = sum(p['Ceiling'] for p in lineup)
+                    
+                    formatted_lineups.append(lineup_row)
+                
+                # Create DataFrame with specific column order
+                columns = ['CPT', 'FLEX 1', 'FLEX 2', 'FLEX 3', 'FLEX 4', 'FLEX 5', 
+                          'Total Salary', 'Total Projection', 'Total Ceiling']
+                csv_df = pd.DataFrame(formatted_lineups, columns=columns)
+                
+                # Create filename based on locked captain
+                filename = "20Lineups.csv"
+                if cpt_lock and cpt_lock != 'None':
+                    filename = f"{cpt_lock}_20Lineups.csv"
+                
+                # Create download button for CSV with explicit encoding
+                csv_buffer = io.StringIO()
+                csv_df.to_csv(csv_buffer, index=False, encoding='utf-8')
+                csv_str = csv_buffer.getvalue()
+                b64 = base64.b64encode(csv_str.encode('utf-8')).decode()
+                href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">📥 Download All Lineups (CSV)</a>'
+                st.markdown(href, unsafe_allow_html=True)
+            
+                # Display only top 3 lineups
+                st.header("Top 3 Lineups by Projection")
+                for i in range(min(3, len(all_lineups))):
+                    lineup = all_lineups[i]
+                    results_df = pd.DataFrame(lineup)
+                    total_salary = results_df['Salary'].sum()
+                    total_points = results_df['Projected'].sum()
+                    total_ceiling = results_df['Ceiling'].sum()
+                    total_own = results_df['Ownership'].sum()
                     
                     st.subheader(f"Projection Lineup #{i+1}")
                     if cpt_lock != 'None':
                         st.write(f"Captain locked: {cpt_lock}")
                     
-                    total_own = results_df['Ownership'].sum()
-                    
                     col1, col2, col3, col4, col5 = st.columns(5)
                     col1.metric("Total Salary", f"${total_salary:,.2f}")
                     col2.metric("Projected Points", f"{total_points:.2f}")
@@ -275,44 +348,5 @@ if uploaded_file is not None:
                     
                     st.dataframe(results_df)
             
-            # Generate ceiling-optimized lineups
-            st.header("Top Lineups by Ceiling")
-            ceiling_lineups = []
-            
-            for i in range(2):
-                with st.spinner(f'Generating ceiling-optimized lineup {i+1}...'):
-                    result = optimize_lineup(
-                        df, 
-                        ceiling_lineups, 
-                        'Ceiling', 
-                        cpt_lock,
-                        use_randomization,
-                        randomization_weight if use_randomization else 0.0,
-                        use_ownership_limit,
-                        max_total_ownership if use_ownership_limit else None
-                    )
-                    
-                    if result[0] is None:
-                        st.error(f"Could not find ceiling lineup #{i+1}")
-                        break
-                    
-                    results_df, total_salary, total_points, total_ceiling = result
-                    ceiling_lineups.append(results_df.to_dict('records'))
-                    
-                    st.subheader(f"Ceiling Lineup #{i+1}")
-                    if cpt_lock != 'None':
-                        st.write(f"Captain locked: {cpt_lock}")
-                    
-                    total_own = results_df['Ownership'].sum()
-                    
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    col1.metric("Total Salary", f"${total_salary:,.2f}")
-                    col2.metric("Projected Points", f"{total_points:.2f}")
-                    col3.metric("Ceiling", f"{total_ceiling:.2f}")
-                    col4.metric("Remaining Salary", f"${50000 - total_salary:,.2f}")
-                    col5.metric("Total Ownership", f"{total_own:.1f}%")
-                    
-                    st.dataframe(results_df)
-                    
     except Exception as e:
         st.error(f"Error: {str(e)}")
