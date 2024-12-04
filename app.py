@@ -220,43 +220,48 @@ if uploaded_file is not None:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        st.write("Data Preview:")
-        st.dataframe(df)
+        # Create two columns for preview and settings
+        col_preview, col_settings = st.columns([2, 1])
         
-        # Add CPT lock dropdown
-        cpt_lock = st.selectbox(
-            'Lock in Captain (optional):',
-            ['None'] + df['Name'].tolist()
-        )
+        with col_preview:
+            st.write("Data Preview:")
+            st.dataframe(df)
         
-        # Add randomization controls
-        with st.expander("Randomization Settings"):
-            use_randomization = st.checkbox("Use Randomization", value=False)
-            if use_randomization:
-                randomization_weight = st.slider(
-                    "Randomization Weight",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.5,
-                    step=0.1,
-                    help="0% = Use Base Projections Only\n" +
-                         "50% = Random range from (Base - Half Range) to (Base + Half Range)\n" +
-                         "100% = Random range from (Base - Full Range) to (Base + Full Range)\n" +
-                         "Range = Distance from Base to Ceiling"
-                )
-        
-        # Add this in the settings area, after the randomization controls
-        with st.expander("Ownership Settings"):
-            use_ownership_limit = st.checkbox("Set Maximum Total Ownership", value=False)
-            if use_ownership_limit:
-                max_total_ownership = st.slider(
-                    "Maximum Total Ownership %",
-                    min_value=0,
-                    max_value=600,  # 6 players * 100%
-                    value=300,
-                    step=5,
-                    help="Set the maximum allowed total ownership percentage for the lineup"
-                )
+        with col_settings:
+            # Add CPT lock dropdown
+            cpt_lock = st.selectbox(
+                'Lock in Captain (optional):',
+                ['None'] + df['Name'].tolist()
+            )
+            
+            # Add randomization controls
+            with st.expander("Randomization Settings"):
+                use_randomization = st.checkbox("Use Randomization", value=False)
+                if use_randomization:
+                    randomization_weight = st.slider(
+                        "Randomization Weight",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.5,
+                        step=0.1,
+                        help="0% = Use Base Projections Only\n" +
+                             "50% = Random range from (Base - Half Range) to (Base + Half Range)\n" +
+                             "100% = Random range from (Base - Full Range) to (Base + Full Range)\n" +
+                             "Range = Distance from Base to Ceiling"
+                    )
+            
+            # Add ownership settings
+            with st.expander("Ownership Settings"):
+                use_ownership_limit = st.checkbox("Set Maximum Total Ownership", value=False)
+                if use_ownership_limit:
+                    max_total_ownership = st.slider(
+                        "Maximum Total Ownership %",
+                        min_value=0,
+                        max_value=600,  # 6 players * 100%
+                        value=300,
+                        step=5,
+                        help="Set the maximum allowed total ownership percentage for the lineup"
+                    )
         
         if st.button("Generate Lineups"):
             # Generate all 20 lineups first
