@@ -1,30 +1,29 @@
-# Underdog Daily Draft Exposures Dashboard
+# DraftKings Lineup Optimizer
 
 ## Overview
-The Underdog Daily Draft Exposures Dashboard is a Streamlit application designed to help users analyze their daily fantasy sports (DFS) exposures on the Underdog platform. This dashboard provides insights into player selections, team distributions, and stack analysis for various sports, including NFL, NBA, and NHL.
+The DraftKings Lineup Optimizer is a Streamlit application designed to help users create optimal daily fantasy sports lineups for soccer. The application utilizes linear programming to maximize projected points while adhering to specific constraints such as salary cap and player positions.
 
 ## Features
 - **Wide Layout**: The application is set to a wide layout for better visibility.
-- **File Upload**: Users can upload CSV files containing their draft data.
-- **Player Search**: A search feature allows users to filter players based on their selections.
-- **Team and Position Analysis**: Visualizations for team distributions and position counts.
-- **Stack Analysis**: Insights into stacking strategies for optimal lineup construction.
-- **Metrics Display**: Key metrics such as total drafts and average draft position are displayed.
+- **File Upload**: Users can upload CSV or Excel files containing player data.
+- **Lineup Generation**: Generate optimal lineups based on player projections and constraints.
+- **Position Constraints**: Ensure that lineups meet specific positional requirements (e.g., number of forwards, midfielders, defenders, and goalkeepers).
+- **Randomization**: Generate multiple lineups with slight random adjustments to player projections for diversity.
 
 ## Technologies Used
 - **Streamlit**: For building the web application.
 - **Pandas**: For data manipulation and analysis.
+- **Pulp**: For linear programming and optimization.
 - **NumPy**: For numerical operations.
-- **Plotly**: For creating interactive visualizations.
-- **Altair**: For additional charting capabilities.
+- **Altair**: For creating interactive visualizations.
 
 ## Installation
 To run this application locally, follow these steps:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/UDexposures.git
-   cd UDexposures
+   git clone https://github.com/yourusername/DFS-Optimizer.git
+   cd DFS-Optimizer
    ```
 
 2. Install the required packages:
@@ -38,10 +37,14 @@ To run this application locally, follow these steps:
    ```
 
 ## Usage
-1. Upload your CSV file containing the draft data.
-2. Use the search box to filter players.
-3. Apply filters for draft pool titles, positions, teams, and drafts.
-4. Analyze the visualizations and metrics displayed on the dashboard.
+1. Upload your CSV or Excel file containing the player pool with the required columns:
+   - Name
+   - POS (Position)
+   - DK Salary
+   - Projection
+   - DK Team
+2. Click the "Generate Top 3 Soccer Lineups" button to create optimal lineups.
+3. Review the generated lineups, including total salary and projected points.
 
 ## Contributing
 Contributions are welcome! If you have suggestions for improvements or new features, please open an issue or submit a pull request.
@@ -54,4 +57,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - Special thanks to the developers of the libraries used in this project.
 
 ## Contact
-For any inquiries or feedback, please reach out to [your-email@example.com](mailto:your-email@example.com).
+For any inquiries or feedback, please reach out to [@loudogvideo on X).
