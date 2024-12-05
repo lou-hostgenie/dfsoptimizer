@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pulp
 import random
+import altair as alt  # Import Altair for more customizable charts
 
 # Set the page configuration to wide layout
 st.set_page_config(page_title="Draftkings Lineup Optimizer", layout="wide")
