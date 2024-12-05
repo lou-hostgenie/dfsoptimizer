@@ -59,6 +59,14 @@ def optimize_soccer_lineup(df):
     # Ensure exactly 1 goalkeeper
     prob += pulp.lpSum(player_vars[player] for player in goalkeepers) == 1  # Exactly 1 GK
     
+    # Ensure at least 2 forwards (including mf_midfielders)
+    prob += pulp.lpSum(player_vars[player] for player in forwards) + \
+            pulp.lpSum(player_vars[player] for player in mf_midfielders) >= 2  # At least 2 forwards
+    
+    # Ensure at least 2 midfielders (including mf_midfielders)
+    prob += pulp.lpSum(player_vars[player] for player in midfielders) + \
+            pulp.lpSum(player_vars[player] for player in mf_midfielders) >= 2  # At least 2 midfielders
+    
     # Solve
     prob.solve()
     
