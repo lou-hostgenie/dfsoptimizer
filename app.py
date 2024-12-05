@@ -54,7 +54,8 @@ def optimize_soccer_lineup(df):
     
     # Allow up to 3 defenders
     prob += pulp.lpSum(player_vars[player] for player in defenders) <= 3  # At most 3 defenders
-    
+    # Ensure at least 2 defenders
+    prob += pulp.lpSum(player_vars[player] for player in defenders) >= 2  # At least 2 defenders
     # Ensure exactly 1 goalkeeper
     prob += pulp.lpSum(player_vars[player] for player in goalkeepers) == 1  # Exactly 1 GK
     
