@@ -54,11 +54,15 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
 
     # Check for required columns
     required_cols = ['Name', 'Team', 'Position', 'Salary', 'Projection', 
-                     'Total Own', 'CPT Salary', 'CPT Projection', 'Ceiling']
+                     'Total Own', 'CPT Salary', 'CPT Projection', 'CPT Own', 'Ceiling']
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
         raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
+
+    # Set default values for missing columns if necessary
+    if 'Total Own' not in df.columns:
+        df['Total Own'] = 0  # Set a default value if the column is missing
 
     if use_random:
         for idx, row in df_random.iterrows():
