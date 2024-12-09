@@ -12,21 +12,20 @@ st.set_page_config(page_title="DraftKings Lineup Optimizer", layout="wide")
 def create_template_csv():
     template_df = pd.DataFrame(columns=[
         'Name',             # Required
-        'Team',             # Required
         'Position',         # Optional
+        'Team',             # Required
         'Salary',           # Required
-        'Projection',       # Required
-        'Total Own',        # Required
         'CPT Salary',       # Required
+        'Projection',       # Required
         'CPT Projection',    # Required
+        'Total Own',        # Required
         'CPT Own',          # Required
         'Ceiling',          # Required
         'Value'             # Optional
     ])
     # Add one example row
     template_df.loc[0] = [
-        'Jalen Hurts', 'PHI', 'QB', 10000, 20.5, 15.0,
-        15000, 30.75, 10.0, 25.0, 2.05
+        'Jalen Hurts', 'QB', 'PHI', 10000, 15000, 10.0, 15.0, 30.75, 10.0, 25.0, 2.05
     ]
     return template_df
 
@@ -53,16 +52,12 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
     df_random = df.copy()
 
     # Check for required columns
-    required_cols = ['Name', 'Team', 'Position', 'Salary', 'Projection', 
-                     'Total Own', 'CPT Salary', 'CPT Projection', 'CPT Own', 'Ceiling']
+    required_cols = ['Name', 'Position', 'Team', 'Salary', 'CPT Salary', 'Projection', 'CPT Projection',
+                     'Total Own', 'CPT Own', 'Ceiling']
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
         raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
-
-    # Set default values for missing columns if necessary
-    if 'Total Own' not in df.columns:
-        df['Total Own'] = 0  # Set a default value if the column is missing
 
     if use_random:
         for idx, row in df_random.iterrows():
@@ -260,16 +255,16 @@ with tabs[0]:
     # DraftKings optimizer logic here...
     if uploaded_file is not None:
         try:
+            # Load the DataFrame
             df = pd.read_csv(uploaded_file)
 
             # Check for required columns
-            required_cols = ['Name', 'Team', 'Position', 'Salary', 'Projection', 
-                             'Total Own', 'CPT Salary', 'CPT Projection', 'CPT Own', 'Ceiling']
+            required_cols = ['Name', 'Position', 'Team', 'Salary', 'Projection', 
+                             'CPT Salary', 'CPT Projection', 'Total Own', 'CPT Own', 'Ceiling']
             missing_cols = [col for col in required_cols if col not in df.columns]
-            
+
             if missing_cols:
-                st.error(f"Missing required columns: {', '.join(missing_cols)}")
-                st.stop()
+                raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
 
             # Add any missing optional columns with default values
             if 'Value' not in df.columns:
@@ -323,7 +318,6 @@ with tabs[0]:
                         'FLEX 5': lineup['Name'].iloc[5],
                         'Total Salary': lineup['Salary'].sum(),
                         'Total Projection': lineup['Projected'].sum(),
-                        'Total Own': lineup['Total Own'].sum(),
                     }
                     lineup_data.append(lineup_row)
 
