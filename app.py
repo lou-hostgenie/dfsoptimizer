@@ -52,6 +52,14 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
     # Create a copy of the dataframe
     df_random = df.copy()
 
+    # Check for required columns
+    required_cols = ['Name', 'Team', 'Position', 'Salary', 'Projection', 
+                     'Total Own', 'CPT Salary', 'CPT Projection', 'Ceiling']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
+
     if use_random:
         for idx, row in df_random.iterrows():
             # Randomize projections
@@ -115,9 +123,21 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
     total_salary = 0
     total_points = 0
     
+    # Process selected players
     for idx, row in df.iterrows():  # Use original df for display
         flex_var = player_vars[f"{row['Name']}_FLEX"]
         cpt_var = player_vars[f"{row['Name']}_CPT"]
+        
+        if cpt_var.value() == 1:
+            selected_players.insert(0, {  # Insert CPT at the top
+                'Position': 'CPT',
+                'Name': row['Name'],
+                'Team': row['Team'],
+                'Salary': float(row['CPT Salary']),
+                'Projected': float(row['CPT Projection']),
+            })
+            total_salary += float(row['CPT Salary'])
+            total_points += float(row['CPT Projection'])
         
         if flex_var.value() == 1:
             selected_players.append({
@@ -129,17 +149,6 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
             })
             total_salary += float(row['Salary'])
             total_points += float(row['Projection'])
-            
-        if cpt_var.value() == 1:
-            selected_players.append({
-                'Position': 'CPT',
-                'Name': row['Name'],
-                'Team': row['Team'],
-                'Salary': float(row['CPT Salary']),
-                'Projected': float(row['CPT Projection']),
-            })
-            total_salary += float(row['CPT Salary'])
-            total_points += float(row['CPT Projection'])
     
     results_df = pd.DataFrame(selected_players)
     return results_df, total_salary, total_points
