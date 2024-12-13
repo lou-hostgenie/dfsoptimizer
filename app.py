@@ -4,6 +4,7 @@ import pulp
 import base64
 import io
 import random
+import numpy as np
 
 # Set page configuration
 st.set_page_config(page_title="DraftKings Lineup Optimizer", layout="wide")
@@ -51,6 +52,32 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
     # Create a copy of the dataframe
     df_random = df.copy()
 
+    if use_random:
+        # Add more randomization to ensure different lineups
+        for idx, row in df_random.iterrows():
+            # Randomize projections with wider variance
+            proj_base = float(row['Projection'])
+            proj_ceiling = float(row['Ceiling'])
+            proj_range = proj_ceiling - proj_base
+            
+            # Increase randomization range
+            max_random = proj_base + (proj_range * random_weight * 1.5)
+            min_random = max(0, proj_base - (proj_range * random_weight * 0.5))
+            df_random.at[idx, 'Projection'] = random.uniform(min_random, max_random)
+
+            # Randomize CPT projections
+            cpt_proj_base = float(row['CPT Projection'])
+            cpt_ceiling = float(row['Ceiling']) * 1.5
+            cpt_range = cpt_ceiling - cpt_proj_base
+            
+            max_random_cpt = cpt_proj_base + (cpt_range * random_weight * 1.5)
+            min_random_cpt = max(0, cpt_proj_base - (cpt_range * random_weight * 0.5))
+            df_random.at[idx, 'CPT Projection'] = random.uniform(min_random_cpt, max_random_cpt)
+    else:
+        # If not using randomization, add small random noise to break ties
+        df_random['Projection'] = df_random['Projection'] + np.random.uniform(-0.01, 0.01, len(df_random))
+        df_random['CPT Projection'] = df_random['CPT Projection'] + np.random.uniform(-0.01, 0.01, len(df_random))
+
     # Check for required columns
     required_cols = ['Name', 'Position', 'Team', 'Salary', 'CPT Salary', 'Projection', 'CPT Projection',
                      'Total Own', 'CPT Own', 'Ceiling']
@@ -58,25 +85,6 @@ def optimize_lineup(df, cpt_lock=None, max_ownership=225, use_random=False, rand
     
     if missing_cols:
         raise ValueError(f"Missing required columns: {', '.join(missing_cols)}")
-
-    if use_random:
-        for idx, row in df_random.iterrows():
-            # Randomize projections
-            proj_base = float(row['Projection'])
-            proj_ceiling = float(row['Ceiling'])
-            proj_range = proj_ceiling - proj_base
-            
-            max_random = proj_base + (proj_range * random_weight)
-            min_random = proj_base - (proj_range * random_weight)
-            df_random.at[idx, 'Projection'] = random.uniform(min_random, max_random)
-
-            cpt_proj_base = float(row['CPT Projection'])
-            cpt_ceiling = float(row['Ceiling']) * 1.5
-            cpt_range = cpt_ceiling - cpt_proj_base
-            
-            max_random_cpt = cpt_proj_base + (cpt_range * random_weight)
-            min_random_cpt = cpt_proj_base - (cpt_range * random_weight)
-            df_random.at[idx, 'CPT Projection'] = random.uniform(min_random_cpt, max_random_cpt)
 
     prob = pulp.LpProblem("Showdown_Optimizer", pulp.LpMaximize)
     
@@ -291,23 +299,56 @@ with tabs[0]:
 
             if st.button("Generate Lineups"):
                 all_lineups = []
-                for i in range(20):  # Generate top 20 lineups
-                    result = optimize_lineup(df, cpt_lock, max_ownership, use_randomization, randomization_weight)
+                seen_lineups = set()  # To track unique lineups
+                attempts = 0
+                max_attempts = 500  # Increase maximum attempts
+                
+                # Add progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                while len(all_lineups) < 20 and attempts < max_attempts:
+                    status_text.text(f"Generated {len(all_lineups)} unique lineups... (Attempt {attempts + 1})")
+                    progress_bar.progress(min(len(all_lineups) / 20, 1.0))
+                    
+                    # Force randomization on after certain attempts if we're not getting enough unique lineups
+                    force_random = attempts > 50 and len(all_lineups) < 10
+                    current_random = use_randomization or force_random
+                    current_weight = randomization_weight if not force_random else min(randomization_weight + 0.2, 1.0)
+                    
+                    result = optimize_lineup(df, cpt_lock, max_ownership, current_random, current_weight)
                     if result[0] is not None:
                         results_df, total_salary, total_points = result
-                        all_lineups.append(results_df)
-
+                        
+                        # Create a tuple of player names to check for uniqueness
+                        lineup_key = tuple(sorted(results_df['Name'].tolist()))
+                        
+                        if lineup_key not in seen_lineups:
+                            seen_lineups.add(lineup_key)
+                            all_lineups.append((results_df, total_points))
+                    
+                    attempts += 1
+                
+                progress_bar.progress(1.0)
+                status_text.text(f"Generated {len(all_lineups)} unique lineups")
+                
+                if len(all_lineups) < 20:
+                    st.warning(f"Could only generate {len(all_lineups)} unique lineups within constraints")
+                
+                # Sort lineups by total projection (descending)
+                all_lineups.sort(key=lambda x: x[1], reverse=True)
+                
                 # Show top 3 lineups in columns
-                st.header("Top 3 Lineups")
+                st.header("Top 3 Lineups by Projection")
                 cols = st.columns(3)  # Create 3 columns
                 for i in range(min(3, len(all_lineups))):
                     with cols[i]:
-                        st.subheader(f"Lineup #{i + 1}")
-                        st.dataframe(all_lineups[i])
+                        st.subheader(f"Lineup #{i + 1} (Proj: {all_lineups[i][1]:.2f})")
+                        st.dataframe(all_lineups[i][0])
 
                 # Create CSV of top 20 lineups with dynamic naming
                 lineup_data = []
-                for i, lineup in enumerate(all_lineups):
+                for i, (lineup, projection) in enumerate(all_lineups):
                     lineup_row = {
                         'Lineup': i + 1,
                         'CPT': lineup['Name'].iloc[0],
@@ -317,7 +358,7 @@ with tabs[0]:
                         'FLEX 4': lineup['Name'].iloc[4],
                         'FLEX 5': lineup['Name'].iloc[5],
                         'Total Salary': lineup['Salary'].sum(),
-                        'Total Projection': lineup['Projected'].sum(),
+                        'Total Projection': projection,
                     }
                     lineup_data.append(lineup_row)
 
