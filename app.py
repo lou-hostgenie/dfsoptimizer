@@ -171,7 +171,7 @@ def optimize_soccer_lineup(df):
         raise ValueError("Input DataFrame is missing required columns.")
     
     # Convert salary to numeric, removing any currency symbols and commas
-    df['DK Salary'] = pd.to_numeric(df['DK Salary'].replace('[\$,]', '', regex=True))
+    df['DK Salary'] = pd.to_numeric(df['DK Salary'].replace(r'[\$,]', '', regex=True))
     df['Projection'] = pd.to_numeric(df['Projection'])
     
     # Create optimization problem
@@ -189,28 +189,34 @@ def optimize_soccer_lineup(df):
     prob += pulp.lpSum([player_vars[row['Name']] * row['DK Salary'] for _, row in df.iterrows()]) <= 50000
     
     # Position constraints
-    forwards = df[df['POS'].str.contains('F')]['Name'].tolist()
-    midfielders = df[df['POS'].str.contains('M') & ~df['POS'].str.contains('M (M/F)')]['Name'].tolist()  # Exclude "M (M/F)"
     defenders = df[df['POS'] == 'D']['Name'].tolist()
-    mf_midfielders = df[df['POS'] == 'M (M/F)']['Name'].tolist()  # New position
+    midfielders = df[df['POS'].str.contains('M') & ~df['POS'].str.contains('M (M/F)')]['Name'].tolist()  # Exclude "M (M/F)"
+    forwards = df[df['POS'] == 'F']['Name'].tolist()
+    mf_midfielders = df[df['POS'] == 'M (M/F)']['Name'].tolist()  # Midfielders that can also play forward
     goalkeepers = df[df['POS'] == 'GK']['Name'].tolist()  # Goalkeepers
     
     # Total must be exactly 7 players
     prob += pulp.lpSum(player_vars.values()) == 7
     
-    # Total number of M, F, and M (M/F) must be between 4 and 5
-    prob += pulp.lpSum(player_vars[player] for player in midfielders) + \
-            pulp.lpSum(player_vars[player] for player in forwards) + \
-            pulp.lpSum(player_vars[player] for player in mf_midfielders) >= 4  # At least 4
-    prob += pulp.lpSum(player_vars[player] for player in midfielders) + \
-            pulp.lpSum(player_vars[player] for player in forwards) + \
-            pulp.lpSum(player_vars[player] for player in mf_midfielders) <= 5  # At most 5
+    # Minimum 2 Defenders
+    prob += pulp.lpSum(player_vars[player] for player in defenders) >= 2
     
-    # Allow up to 3 defenders
-    prob += pulp.lpSum(player_vars[player] for player in defenders) <= 3  # At most 3 defenders
+    # Maximum 3 Defenders
+    prob += pulp.lpSum(player_vars[player] for player in defenders) <= 3
+    
+    # Minimum 2 Midfielders (M) + Midfielders (M (M/F))
+    prob += pulp.lpSum(player_vars[player] for player in midfielders) + \
+            pulp.lpSum(player_vars[player] for player in mf_midfielders) >= 2
+    
+    # Minimum 2 Forwards (F) + Midfielders (M (M/F))
+    prob += pulp.lpSum(player_vars[player] for player in forwards) + \
+            pulp.lpSum(player_vars[player] for player in mf_midfielders) >= 2
+    
+    # Maximum 5 Midfielders (M (M/F))
+    prob += pulp.lpSum(player_vars[player] for player in mf_midfielders) <= 5
     
     # Ensure exactly 1 goalkeeper
-    prob += pulp.lpSum(player_vars[player] for player in goalkeepers) == 1  # Exactly 1 GK
+    prob += pulp.lpSum(player_vars[player] for player in goalkeepers) == 1
     
     # Solve
     prob.solve()
@@ -235,10 +241,6 @@ def optimize_soccer_lineup(df):
             })
             total_salary += row['DK Salary']
             total_points += row['Projection']
-    
-    # Sort by position
-    position_order = {'GK': 1, 'D': 2, 'M': 3, 'F': 4, 'M (M/F)': 5}  # Sort by position
-    selected_players.sort(key=lambda x: position_order[x['Position']])
     
     return pd.DataFrame(selected_players), total_salary, total_points
 
